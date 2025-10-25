@@ -1,0 +1,96 @@
+from difflib import SequenceMatcher # score
+from koroman import romanize # hangul / hanja
+import cyrtranslit # cyrillic
+import collections
+import cutlet # hiraagana / katakana / kanji
+katsu = cutlet.Cutlet()
+katsu.use_foreign_spelling = False
+
+def analyze_script(filepath):
+    alphabet_counts = collections.defaultdict(int)
+
+    with open(filepath, 'r', encoding='utf-8') as f:
+        for line in f:
+            for char in line:
+                if 'a' <= char.lower() <= 'z':
+                
+                # European unicode blocks
+                    alphabet_counts['Latin'] += 1
+                elif '\u0400' <= char <= '\u04FF': 
+                    alphabet_counts['Cyrillic'] += 1
+                elif '\u0370' <= char <= '\u03FF':
+                    alphabet_counts['Greek'] += 1
+                # Korean unicode blocks
+                elif '\u1100' <= char <= '\u11ff':
+                    alphabet_counts['Hangul_Jamo'] += 1
+                elif '\ua960' <= char <= '\ua97f':
+                    alphabet_counts['Hangul_Jamo_Extended-A'] += 1
+                elif '\ud7b0' <= char <= '\ud7ff':
+                    alphabet_counts['Hangul_Jamo_Extended-B'] += 1  
+                elif '\u3130' <= char <= '\u318f':
+                    alphabet_counts['Hangul_Compatibility_Jamo'] += 1
+                elif '\uac00' <= char <= '\ud7af':
+                    alphabet_counts['Hangul_Syllabes'] += 1
+                # Japanese unicode blocks
+                elif '\u3040' <= char <= '\u309f':
+                    alphabet_counts['Hiragana'] += 1 
+                elif '\u30a0' <= char <= '\u30ff':
+                    alphabet_counts['Katakana'] += 1 
+                elif '\u3000' <= char <= '\u303f':
+                    alphabet_counts['Japanese_Punctuation'] += 1 
+                # CJK Unified
+                elif '\u4e00' <= char <= '\u9faf':
+                    alphabet_counts['CJK_Unified_Ideographs'] += 1 
+    return alphabet_counts
+
+def is_correct(user_romanisation, lyrics_romanized, threshold=0.85):
+    ratio = SequenceMatcher(None, user_romanisation, lyrics_romanized).ratio()
+    return ratio >= threshold
+
+filepath = input("Input the path to your lyric-containing file ")
+detected_alphabets = analyze_script(filepath)
+for alphabet, count in detected_alphabets.items():
+    print(f"- {alphabet}: {count}")
+    if 'Hangul_Syllables' or 'Hangul_Jamo' in alphabet: 
+        with open(filepath, "r", encoding="utf-8") as file:
+            가사 = [line.strip() for line in file if line.strip()]
+            lyrics_romanized = [romanize(line) for line in 가사]
+            
+    if 'Hiragana' or 'Katakana' in alphabet:
+        with open(filepath, "r", encoding="utf-8") as file:
+            가사 = [line.strip() for line in file if line.strip()]
+            lyrics_romanized = [katsu.romaji(line) for line in 가사]
+            
+    
+    if 'Cyrillic' in alphabet:
+        with open(filepath, "r", encoding="utf-8") as file:
+            가사 = [line.strip() for line in file if line.strip()]
+            lyrics_romanized = [cyrtranslit.to_latin(line, 'ru') for line in 가사]
+            
+    
+    if 'Cyrillic' and 'Latin' in alphabet: # this is a weird edge case: serbian and kosovan often combine cyrillic and latin in their orthography
+        with open(filepath, "r", encoding="utf-8") as file:
+            가사 = [line.strip() for line in file if line.strip()]
+            lyrics_romanized = [cyrtranslit.to_latin(line) for line in 가사] # no language flag, cyrtranslit was developed in kosovo
+            
+
+
+total_elements = len(lyrics_romanized)
+correct_elements = 0
+
+for i in range(len(가사)):
+    while True:
+        user_romanisation = input("Romanize the following lyrics: '{}'\n".format(가사[i]))
+        score = SequenceMatcher(None, user_romanisation, lyrics_romanized[i]).ratio()
+
+        if is_correct(user_romanisation, lyrics_romanized[i]) and correct_elements < total_elements:        
+            print("Correct! Your romanisation matches closely, with a score of {:.2f}".format(score))
+            print("The completely correct romanization is", lyrics_romanized[i])
+            correct_elements += 1
+            if correct_elements == total_elements:
+                print("All elements romanized correctly! Well done!")
+            break # accepted
+
+        if score < 0.85:
+            print(f"Incorrect, the correct romanisation is", "<", lyrics_romanized[i], ">", ",", "try again")
+            print("Score: {:.2f}".format(score))
